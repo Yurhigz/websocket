@@ -173,6 +173,7 @@ var nilDialer = *DefaultDialer
 // etcetera. The response body may not contain the entire response and does not
 // need to be closed by the application.
 var maxErrorResponseSize = 4096
+
 func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader http.Header) (*Conn, *http.Response, error) {
 	if d == nil {
 		d = &nilDialer
@@ -366,7 +367,6 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 		// function, slurp up some of the response to aid application
 		// debugging.
 
-		// Mon implémentation avec une maxErrorResponseSize
 		limReader := io.LimitReader(resp.Body, int64(maxErrorResponseSize))
 		buf, err := io.ReadAll(limReader)
 		if err != nil && err != io.EOF {

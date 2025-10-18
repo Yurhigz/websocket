@@ -573,8 +573,10 @@ func TestHandshake(t *testing.T) {
 }
 
 func TestRespOnBadHandshake(t *testing.T) {
+	// Test Body smaller than maxErrorResponseSize.
 	const expectedStatus = http.StatusGone
 	const expectedBody = "This is the response body."
+	const maxErrorResponseSize = 4096
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(expectedStatus)
@@ -604,6 +606,76 @@ func TestRespOnBadHandshake(t *testing.T) {
 	if string(p) != expectedBody {
 		t.Errorf("resp.Body=%s, want %s", p, expectedBody)
 	}
+
+	// Test Body larger than maxErrorResponseSize.
+	t.Run("ErrorResponseSizeLimited", func(t *testing.T) {
+		largeBody := make([]byte, maxErrorResponseSize+100)
+		for i := range largeBody {
+			largeBody[i] = 'a'
+		}
+
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write(largeBody)
+		}))
+		defer s.Close()
+
+		ws, resp, err := cstDialer.Dial(makeWsProto(s.URL), nil)
+		if err == nil {
+			ws.Close()
+			t.Fatalf("Dial: expected error, got nil")
+		}
+
+		if resp == nil {
+			t.Fatalf("resp=nil, err=%v", err)
+		}
+
+		p, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("ReadAll(resp.Body) returned error %v", err)
+		}
+
+		resp.Body.Close()
+
+		if len(p) > maxErrorResponseSize {
+			t.Fatalf("body size=%d, want <= %d", len(p), maxErrorResponseSize)
+		}
+	})
+
+	// Test Body exactly maxErrorResponseSize.
+	t.Run("ErrorResponseSizeExactLimit", func(t *testing.T) {
+		limitedBody := make([]byte, maxErrorResponseSize)
+		for i := range limitedBody {
+			limitedBody[i] = 'a'
+		}
+
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
+			w.Write(limitedBody)
+		}))
+		defer s.Close()
+
+		ws, resp, err := cstDialer.Dial(makeWsProto(s.URL), nil)
+		if err == nil {
+			ws.Close()
+			t.Fatalf("Dial: expected error, got nil")
+		}
+
+		if resp == nil {
+			t.Fatalf("resp=nil, err=%v", err)
+		}
+
+		p, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("ReadAll(resp.Body) returned error %v", err)
+		}
+
+		resp.Body.Close()
+
+		if len(p) != maxErrorResponseSize {
+			t.Fatalf("body size=%d, want %d", len(p), maxErrorResponseSize)
+		}
+	})
 }
 
 type testLogWriter struct {
